@@ -769,31 +769,36 @@ export default function Dashboard() {
         `${user.id}/scan-${crypto.randomUUID()}.${fileExtension}`;
 
       const {
-        error: uploadError,
-      } =
-        await supabase.storage
-          .from("receipts")
-          .upload(
-            filePath,
-            receiptFile,
-            {
-              upsert: false,
-              contentType:
-                receiptFile.type,
-            }
-          );
+  data: uploadData,
+  error: uploadError,
+} = await supabase.storage
+  .from("receipts")
+  .upload(
+    filePath,
+    receiptFile,
+    {
+      upsert: false,
+      contentType: receiptFile.type,
+    }
+  );
 
-      if (uploadError) {
-  console.error("RECEIPT UPLOAD ERROR:", uploadError);
+if (uploadError) {
+  console.error("========== RECEIPT UPLOAD ERROR ==========");
+  console.error("message:", uploadError.message);
+  console.error("name:", uploadError.name);
+  console.error("statusCode:", uploadError.statusCode);
+  console.error("full error:", uploadError);
 
   setError(
-    `UPLOAD ERROR: ${uploadError.message || "Unknown error"} | ${
-      uploadError.name || "Unknown"
-    }`
+    `UPLOAD ERROR: ${uploadError.message || "Unknown error"}`
   );
 
   return;
 }
+
+console.log("========== RECEIPT UPLOAD SUCCESS ==========");
+console.log("uploadData:", uploadData);
+console.log("filePath:", filePath);
       const {
         data: publicUrlData,
       } =
