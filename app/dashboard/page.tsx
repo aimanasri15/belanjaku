@@ -675,232 +675,50 @@ export default function Dashboard() {
   // SELECT RECEIPT
   // =========================
 
-  async function handleReceiptSelect(
+  function handleReceiptSelect(
     file: File | null
   ) {
     if (!file) {
       return;
     }
 
-    if (!file.type.startsWith("image/")) {
-      setError("Sila pilih fail gambar.");
+    if (
+      !file.type.startsWith(
+        "image/"
+      )
+    ) {
+      setError(
+        "Sila pilih fail gambar."
+      );
+
+      return;
+    }
+
+    if (
+      file.size >
+      10 * 1024 * 1024
+    ) {
+      setError(
+        "Saiz gambar maksimum ialah 10MB."
+      );
+
       return;
     }
 
     setError("");
-    setUploadingReceipt(true);
 
-    try {
-      const compressedFile =
-        await compressReceiptImage(file);
+    setReceiptFile(file);
 
-      setReceiptFile(compressedFile);
+    const previewUrl =
+      URL.createObjectURL(file);
 
-      const previewUrl =
-        URL.createObjectURL(compressedFile);
-
-      setReceiptPreview(previewUrl);
-
-      // Reset result lama
-      setAiResult(null);
-      setShowAiResult(false);
-    } catch (compressionError) {
-      console.error(
-        "Receipt image compression error:",
-        compressionError
-      );
-
-      setError(
-        "Gambar resit tak dapat diproses. Cuba gambar lain."
-      );
-
-      setReceiptFile(null);
-      setReceiptPreview(null);
-    } finally {
-      setUploadingReceipt(false);
-    }
-  }
-
-  async function compressReceiptImage(
-    file: File
-  ): Promise<File> {
-    const MAX_DIMENSION = 1800;
-    const TARGET_BYTES = 3 * 1024 * 1024;
-
-    const bitmap =
-      await createImageBitmap(file);
-
-    const scale = Math.min(
-      1,
-      MAX_DIMENSION /
-        Math.max(
-          bitmap.width,
-          bitmap.height
-        )
+    setReceiptPreview(
+      previewUrl
     );
 
-    const width = Math.max(
-      1,
-      Math.round(
-        bitmap.width * scale
-      )
-    );
-
-    const height = Math.max(
-      1,
-      Math.round(
-        bitmap.height * scale
-      )
-    );
-
-    const canvas =
-      document.createElement("canvas");
-
-    canvas.width = width;
-    canvas.height = height;
-
-    const context =
-      canvas.getContext("2d");
-
-    if (!context) {
-      bitmap.close();
-      throw new Error(
-        "Canvas tidak tersedia."
-      );
-    }
-
-    context.drawImage(
-      bitmap,
-      0,
-      0,
-      width,
-      height
-    );
-
-    bitmap.close();
-
-    const canvasToBlob = (
-      quality: number
-    ) =>
-      new Promise<Blob>(
-        (resolve, reject) => {
-          canvas.toBlob(
-            (blob) => {
-              if (blob) {
-                resolve(blob);
-              } else {
-                reject(
-                  new Error(
-                    "Gagal menghasilkan gambar JPEG."
-                  )
-                );
-              }
-            },
-            "image/jpeg",
-            quality
-          );
-        }
-      );
-
-    let quality = 0.82;
-
-    let blob =
-      await canvasToBlob(
-        quality
-      );
-
-    while (
-      blob.size >
-        TARGET_BYTES &&
-      quality > 0.45
-    ) {
-      quality -= 0.08;
-
-      blob =
-        await canvasToBlob(
-          quality
-        );
-    }
-
-    if (
-      blob.size >
-      TARGET_BYTES
-    ) {
-      const smallerCanvas =
-        document.createElement(
-          "canvas"
-        );
-
-      const smallerScale = 0.75;
-
-      smallerCanvas.width =
-        Math.max(
-          1,
-          Math.round(
-            width *
-              smallerScale
-          )
-        );
-
-      smallerCanvas.height =
-        Math.max(
-          1,
-          Math.round(
-            height *
-              smallerScale
-          )
-        );
-
-      const smallerContext =
-        smallerCanvas.getContext(
-          "2d"
-        );
-
-      if (!smallerContext) {
-        throw new Error(
-          "Canvas tidak tersedia."
-        );
-      }
-
-      smallerContext.drawImage(
-        canvas,
-        0,
-        0,
-        smallerCanvas.width,
-        smallerCanvas.height
-      );
-
-      blob =
-        await new Promise<Blob>(
-          (resolve, reject) => {
-            smallerCanvas.toBlob(
-              (result) => {
-                if (result) {
-                  resolve(result);
-                } else {
-                  reject(
-                    new Error(
-                      "Gagal mengecilkan gambar."
-                    )
-                  );
-                }
-              },
-              "image/jpeg",
-              0.72
-            );
-          }
-        );
-    }
-
-    return new File(
-      [blob],
-      "receipt.jpg",
-      {
-        type: "image/jpeg",
-        lastModified:
-          Date.now(),
-      }
-    );
+    // Reset result lama
+    setAiResult(null);
+    setShowAiResult(false);
   }
 
   // =========================
@@ -972,7 +790,7 @@ export default function Dashboard() {
         );
 
         setError(
-          "Gambar resit gagal dimuat naik."
+          `Upload gagal: ${uploadError.message}`
         );
 
         return;
