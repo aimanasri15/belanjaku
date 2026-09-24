@@ -84,8 +84,6 @@ export default function Dashboard() {
   const [checkingAuth, setCheckingAuth] =
     useState(true);
 
-  const [authUserId, setAuthUserId] = useState<string | null>(null);
-
   const [loadingExpenses, setLoadingExpenses] =
     useState(true);
 
@@ -309,26 +307,23 @@ export default function Dashboard() {
 
   useEffect(() => {
     async function startDashboard() {
-      const { data: { session } } =
-        await supabase.auth.getSession();
-
-      const user = session?.user;
+      const {
+        data: { user },
+      } =
+        await supabase.auth.getUser();
 
       if (!user) {
         router.replace("/login");
         return;
       }
 
-      setAuthUserId(user.id);
       setCheckingAuth(false);
 
-      // Ambil semua data menggunakan user yang sama.
-      // Ini elakkan getUser() berulang kali dan buat dashboard lebih responsif.
       await Promise.all([
         loadExpenses(),
-        loadIncome(user.id),
-        loadCommitments(user.id),
-        loadBudget(user.id),
+        loadIncome(),
+        loadCommitments(),
+        loadBudget(),
       ]);
     }
 
@@ -401,10 +396,15 @@ export default function Dashboard() {
   // LOAD INCOME
   // =========================
 
-  async function loadIncome(userId: string) {
+  async function loadIncome() {
     setLoadingIncome(true);
 
-    if (!userId) {
+    const {
+      data: { user },
+    } =
+      await supabase.auth.getUser();
+
+    if (!user) {
       setLoadingIncome(false);
       return;
     }
@@ -415,7 +415,7 @@ export default function Dashboard() {
     } = await supabase
       .from("income")
       .select("amount, income_date")
-      .eq("user_id", userId);
+      .eq("user_id", user.id);
 
     if (error) {
       console.error(
@@ -459,10 +459,15 @@ export default function Dashboard() {
   // LOAD COMMITMENTS
   // =========================
 
-  async function loadCommitments(userId: string) {
+  async function loadCommitments() {
     setLoadingCommitments(true);
 
-    if (!userId) {
+    const {
+      data: { user },
+    } =
+      await supabase.auth.getUser();
+
+    if (!user) {
       setLoadingCommitments(false);
       return;
     }
@@ -473,7 +478,7 @@ export default function Dashboard() {
     } = await supabase
       .from("fixed_commitments")
       .select("amount")
-      .eq("user_id", userId)
+      .eq("user_id", user.id)
       .eq("active", true);
 
     if (error) {
@@ -503,13 +508,17 @@ export default function Dashboard() {
   // MONTHLY BUDGET
   // =========================
 
-  async function loadBudget(userId: string) {
-    if (!userId) return;
+  async function loadBudget() {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) return;
 
     const { data, error } = await supabase
       .from("monthly_budgets")
       .select("amount")
-      .eq("user_id", userId)
+      .eq("user_id", user.id)
       .eq("month", selectedMonth)
       .maybeSingle();
 
@@ -589,10 +598,8 @@ export default function Dashboard() {
 
   // Refresh budget whenever the selected month changes.
   useEffect(() => {
-    if (!checkingAuth && authUserId) {
-      loadBudget(authUserId);
-    }
-  }, [selectedMonth, checkingAuth, authUserId]);
+    if (!checkingAuth) loadBudget();
+  }, [selectedMonth, checkingAuth]);
 
   // =========================
   // LOGOUT
@@ -668,50 +675,232 @@ export default function Dashboard() {
   // SELECT RECEIPT
   // =========================
 
-  function handleReceiptSelect(
+  async function handleReceiptSelect(
     file: File | null
   ) {
     if (!file) {
       return;
     }
 
-    if (
-      !file.type.startsWith(
-        "image/"
-      )
-    ) {
-      setError(
-        "Sila pilih fail gambar."
-      );
-
-      return;
-    }
-
-    if (
-      file.size >
-      10 * 1024 * 1024
-    ) {
-      setError(
-        "Saiz gambar maksimum ialah 10MB."
-      );
-
+    if (!file.type.startsWith("image/")) {
+      setError("Sila pilih fail gambar.");
       return;
     }
 
     setError("");
+    setUploadingReceipt(true);
 
-    setReceiptFile(file);
+    try {
+      const compressedFile =
+        await compressReceiptImage(file);
 
-    const previewUrl =
-      URL.createObjectURL(file);
+      setReceiptFile(compressedFile);
 
-    setReceiptPreview(
-      previewUrl
+      const previewUrl =
+        URL.createObjectURL(compressedFile);
+
+      setReceiptPreview(previewUrl);
+
+      // Reset result lama
+      setAiResult(null);
+      setShowAiResult(false);
+    } catch (compressionError) {
+      console.error(
+        "Receipt image compression error:",
+        compressionError
+      );
+
+      setError(
+        "Gambar resit tak dapat diproses. Cuba gambar lain."
+      );
+
+      setReceiptFile(null);
+      setReceiptPreview(null);
+    } finally {
+      setUploadingReceipt(false);
+    }
+  }
+
+  async function compressReceiptImage(
+    file: File
+  ): Promise<File> {
+    const MAX_DIMENSION = 1800;
+    const TARGET_BYTES = 3 * 1024 * 1024;
+
+    const bitmap =
+      await createImageBitmap(file);
+
+    const scale = Math.min(
+      1,
+      MAX_DIMENSION /
+        Math.max(
+          bitmap.width,
+          bitmap.height
+        )
     );
 
-    // Reset result lama
-    setAiResult(null);
-    setShowAiResult(false);
+    const width = Math.max(
+      1,
+      Math.round(
+        bitmap.width * scale
+      )
+    );
+
+    const height = Math.max(
+      1,
+      Math.round(
+        bitmap.height * scale
+      )
+    );
+
+    const canvas =
+      document.createElement("canvas");
+
+    canvas.width = width;
+    canvas.height = height;
+
+    const context =
+      canvas.getContext("2d");
+
+    if (!context) {
+      bitmap.close();
+      throw new Error(
+        "Canvas tidak tersedia."
+      );
+    }
+
+    context.drawImage(
+      bitmap,
+      0,
+      0,
+      width,
+      height
+    );
+
+    bitmap.close();
+
+    const canvasToBlob = (
+      quality: number
+    ) =>
+      new Promise<Blob>(
+        (resolve, reject) => {
+          canvas.toBlob(
+            (blob) => {
+              if (blob) {
+                resolve(blob);
+              } else {
+                reject(
+                  new Error(
+                    "Gagal menghasilkan gambar JPEG."
+                  )
+                );
+              }
+            },
+            "image/jpeg",
+            quality
+          );
+        }
+      );
+
+    let quality = 0.82;
+
+    let blob =
+      await canvasToBlob(
+        quality
+      );
+
+    while (
+      blob.size >
+        TARGET_BYTES &&
+      quality > 0.45
+    ) {
+      quality -= 0.08;
+
+      blob =
+        await canvasToBlob(
+          quality
+        );
+    }
+
+    if (
+      blob.size >
+      TARGET_BYTES
+    ) {
+      const smallerCanvas =
+        document.createElement(
+          "canvas"
+        );
+
+      const smallerScale = 0.75;
+
+      smallerCanvas.width =
+        Math.max(
+          1,
+          Math.round(
+            width *
+              smallerScale
+          )
+        );
+
+      smallerCanvas.height =
+        Math.max(
+          1,
+          Math.round(
+            height *
+              smallerScale
+          )
+        );
+
+      const smallerContext =
+        smallerCanvas.getContext(
+          "2d"
+        );
+
+      if (!smallerContext) {
+        throw new Error(
+          "Canvas tidak tersedia."
+        );
+      }
+
+      smallerContext.drawImage(
+        canvas,
+        0,
+        0,
+        smallerCanvas.width,
+        smallerCanvas.height
+      );
+
+      blob =
+        await new Promise<Blob>(
+          (resolve, reject) => {
+            smallerCanvas.toBlob(
+              (result) => {
+                if (result) {
+                  resolve(result);
+                } else {
+                  reject(
+                    new Error(
+                      "Gagal mengecilkan gambar."
+                    )
+                  );
+                }
+              },
+              "image/jpeg",
+              0.72
+            );
+          }
+        );
+    }
+
+    return new File(
+      [blob],
+      "receipt.jpg",
+      {
+        type: "image/jpeg",
+        lastModified:
+          Date.now(),
+      }
+    );
   }
 
   // =========================
