@@ -784,18 +784,16 @@ export default function Dashboard() {
           );
 
       if (uploadError) {
-        console.error(
-          "Receipt upload error:",
-          uploadError
-        );
+  console.error("RECEIPT UPLOAD ERROR:", uploadError);
 
-        setError(
-          `Upload gagal: ${uploadError.message}`
-        );
+  setError(
+    `UPLOAD ERROR: ${uploadError.message || "Unknown error"} | ${
+      uploadError.name || "Unknown"
+    }`
+  );
 
-        return;
-      }
-
+  return;
+}
       const {
         data: publicUrlData,
       } =
